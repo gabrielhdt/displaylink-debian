@@ -11,10 +11,16 @@
 # Copyleft: Adnan Hodzic <adnan@hodzic.org>
 # License: GPLv3
 
+# Bash Strict Mode
+set -eu
+# set -o pipefail # TODO: Some code still fails this check, fix before enabling.
+IFS=$'\n\t'
+
+
 # define the version to get as the latest available version
 version=`wget -q -O - https://www.displaylink.com/downloads/ubuntu | grep "download-version" | head -n 1 | perl -pe '($_)=/([0-9]+([.][0-9]+)+)/'`
 # define download url to be the correct version
-dlurl="https://www.displaylink.com/"`wget -q -O - https://www.displaylink.com/downloads/ubuntu | grep "download-link" | head -n 1 | perl -pe '($_)=/<a href="\/([^"]+)"[^>]+class="download-link"/'`
+dlurl="https://www.displaylink.com/"`wget -q -O - https://www.displaylink.com/downloads/ubuntu | grep 'class="download-link"' | head -n 1 | perl -pe '($_)=/<a href="\/([^"]+)"[^>]+class="download-link"/'`
 driver_dir=$version
 dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )/" && pwd )"
 
@@ -67,22 +73,16 @@ fi
 # list all xorg related configs
 xconfig_list(){
 x11_etc="/etc/X11/"
-x11_etc_confd="/etc/X11/xorg.conf.d/"
 
-check_etc=$(find $x11_etc -maxdepth 2 -name "*.conf")
-list_etc_confd=$(ls -1 $x11_etc*.conf 2>/dev/null | wc -l)
-
-if [ ${#check_etc[@]} -gt 0 ];
-then
-		if [ "$x11_etc" != 0 ]
-		then
-				find $x11_etc -type f -name "*.conf" | xargs echo "X11 configs:"
-		elif [ "$list_etc_confd" != 0 ]
-		then
-				find $x11_etc_confd -type f -name "*.conf" | xargs echo "X11 configs:"
-		fi
+if [ ! -d "${x11_etc}" ] ; then # No directory found
+	echo "X11 configs: None"
+	return 0
 fi
 
+count_conf_in_etc=$(find $x11_etc -maxdepth 2 -name "*.conf" | wc -l)
+if [ $count_conf_in_etc -gt 0 ]; then
+	find $x11_etc -type f -name "*.conf" | xargs echo "X11 configs:"
+fi
 }
 
 # Dependencies
@@ -150,7 +150,7 @@ echo -e "\n---------------------------------------------------------------\n"
 # Ubuntu
 if [ "$lsb" == "Ubuntu" ];
 then
-	if [ $codename == "trusty" ] || [ $codename == "vivid" ] || [ $codename == "wily" ] || [ $codename == "xenial" ] || [ $codename == "yakkety" ] || [ $codename == "zesty" ] || [ $codename == "artful" ] || [ $codename == "bionic" ] || [ $codename == "cosmic" ] || [ $codename == "disco" ] || [ $codename == "eoan" ];
+	if [ $codename == "trusty" ] || [ $codename == "vivid" ] || [ $codename == "wily" ] || [ $codename == "xenial" ] || [ $codename == "yakkety" ] || [ $codename == "zesty" ] || [ $codename == "artful" ] || [ $codename == "bionic" ] || [ $codename == "cosmic" ] || [ $codename == "disco" ] || [ $codename == "eoan" ] || [ $codename == "focal" ];
 	then
 		echo -e "\nPlatform requirements satisfied, proceeding ..."
 	else
@@ -160,7 +160,7 @@ then
 # elementary OS
 elif [ "$lsb" == "elementary OS" ] || [ "$lsb" == "elementary" ];
 then
-	if [ $codename == "freya" ] || [ $codename == "loki" ] || [ $codename == "juno" ];
+	if [ $codename == "freya" ] || [ $codename == "loki" ] || [ $codename == "juno" ] || [ $codename == "hera" ];
 	then
 		echo -e "\nPlatform requirements satisfied, proceeding ..."
 	else
@@ -190,7 +190,7 @@ then
 # Mint
 elif [ "$lsb" == "LinuxMint" ];
 then
-	if [ $codename == "sarah" ] || [ $codename == "rosa" ] || [ $codename == "petra" ] || [ $codename == "olivia" ] || [ $codename == "serena" ] || [ $codename == "sonya" ] || [ $codename == "sylvia" ] || [ $codename == "tara" ] || [ $codename == "tessa" ] || [ $codename == "betsy" ] || [ $codename == "cindy" ] || [ $codename == "tina" ];
+	if [ $codename == "sarah" ] || [ $codename == "rosa" ] || [ $codename == "petra" ] || [ $codename == "olivia" ] || [ $codename == "serena" ] || [ $codename == "sonya" ] || [ $codename == "sylvia" ] || [ $codename == "tara" ] || [ $codename == "tessa" ] || [ $codename == "betsy" ] || [ $codename == "cindy" ] || [ $codename == "tina" ] || [ $codename == "tricia" ];
 	then
 		echo -e "\nPlatform requirements satisfied, proceeding ..."
 	else
@@ -315,8 +315,8 @@ fi
 }
 
 setup_complete(){
-ack=${ack:-$default}
 default=Y
+ack=${ack:-$default}
 
 read -p "Reboot now? [Y/n] " ack
 ack=${ack:-$default}
@@ -388,12 +388,33 @@ then
 	ln -s /lib/modules/$(uname -r)/build/Makefile /lib/modules/$(uname -r)/build/Kconfig
 fi
 
+
 # install
 separator
+############################################################
+####START of Modifications for EVDI Kernel 5.4 issues   ####
+############################################################
+#Build EVDI from SRC
+./evdi.sh
+#Replace Broken tgz with new
+tgzName=`ls $driver_dir/displaylink-driver-${version}/*.gz | cut -d'/' -f3`
+cd ./evdi/module/
+tar -czf $tgzName *
+cp -f $tgzName ../../$driver_dir/displaylink-driver-${version}/$tgzName
+#Replace Broken libs with new compiled ones
+cp -f ../library/libevdi.so.1.* ../../$driver_dir/displaylink-driver-${version}/x64-ubuntu-1604/libevdi.so
+cp -f ../library/libevdi.so.1.* ../../$driver_dir/displaylink-driver-${version}/x86-ubuntu-1604/libevdi.so
+cd ../../
+rm -rf evdi/
+############################################################
+####END of Modifications for EVDI Kernel 5.4 issues     ####
+############################################################
+
 # run displaylink install
 echo -e "\nInstalling driver version: $version\n"
 cd $driver_dir/displaylink-driver-${version}
 ./displaylink-installer.sh install
+
 
 # udlfb kernel version check
 kernel_check="$(uname -r | egrep -o '[0-9]+\.[0-9]+')"
@@ -729,8 +750,8 @@ debug(){
 separator
 echo -e "\nStarting Debug ...\n"
 
-ack=${ack:-$default}
 default=N
+ack=${ack:-$default}
 
 read -p "Did you read Post Installation Guide? http://bit.ly/2TbZleK [y/N] " ack
 ack=${ack:-$default}
@@ -808,7 +829,7 @@ Select a key: [i/d/r/u/q]: " answer
 
 root_check
 
-if [[ -z "${1}" ]];
+if [[ "$#" -lt 1 ]];
 then
   ask_operation
 else
